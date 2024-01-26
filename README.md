@@ -1,6 +1,8 @@
 # Spring Boot Microservices
+
 This repository contains the latest source code of the spring-boot-microservices tutorial
 
+https://www.youtube.com/watch?v=8PJUnnhLXiI
 You can watch the tutorial on Youtube here - https://www.youtube.com/watch?v=mPPhcU7oWDU&t=20634s
 
 ## How to run the application using Docker

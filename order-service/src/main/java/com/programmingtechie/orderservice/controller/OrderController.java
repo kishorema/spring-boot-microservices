@@ -7,6 +7,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,8 +16,9 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 @RequestMapping("/api/order")
 @RequiredArgsConstructor
-@Slf4j
 public class OrderController {
+
+    private static final Logger log = org.slf4j.LoggerFactory.getLogger(OrderController.class);
 
     private final OrderService orderService;
 

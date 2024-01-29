@@ -96,11 +96,11 @@ services:
       - ./realms/:/opt/keycloak/data/import/
     depends_on:
       - keycloak-mysqldb
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8181 || exit 1
-      interval: 30s
-      timeout: 5s
-      retries: 3
+  #    healthcheck:
+  #      test: wget --no-verbose --tries=1 --spider http://localhost:8181 || exit 1
+  #      interval: 30s
+  #      timeout: 5s
+  #      retries: 3
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.2
@@ -119,6 +119,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
   kafka:
     image: confluentinc/cp-kafka:7.3.2
     container_name: kafka
@@ -163,7 +164,7 @@ services:
     ports:
       - "8761:8761"
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8761 || exit 1
+      test: wget --no-verbose --tries=1 --spider http://localhost:8761/actuator/health || exit 1
       interval: 10s
       timeout: 5s
       retries: 3
@@ -318,8 +319,10 @@ services:
     ports:
       - "9200:9200"
       - "9300:9300"
+    networks:
+      - internal
     healthcheck:
-      test: "wget -q -O - http://$ELASTIC_USER:$ELASTIC_PASSWORD@localhost:9200/_cat/health"
+      test: "curl http://$ELASTIC_USER:$ELASTIC_PASSWORD@localhost:9200/_cat/health"
       interval: 10s
       timeout: 30s
       retries: 10
@@ -341,11 +344,13 @@ services:
     volumes:
       - ./elasticsearch-kibana/logstash/pipeline:/usr/share/logstash/pipeline:ro
     restart: unless-stopped
+    networks:
+      - internal
     depends_on:
       elasticsearch:
         condition: service_healthy
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:5000 || exit 1
+      test: "curl http://$ELASTIC_USER:$ELASTIC_PASSWORD@localhost:9600/_cat/health"
       interval: 10s
       timeout: 5s
       retries: 3
@@ -363,13 +368,15 @@ services:
     ports:
       - "5601:5601"
     restart: unless-stopped
+    networks:
+      - internal
     depends_on:
       elasticsearch:
         condition: service_healthy
       logstash:
         condition: service_healthy
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:5601 || exit 1
+      test: curl http://localhost:5601
       interval: 10s
       timeout: 5s
       retries: 3
@@ -377,3 +384,5 @@ services:
 volumes:
   elasticsearch:
   mongo-data:
+networks:
+  internal:

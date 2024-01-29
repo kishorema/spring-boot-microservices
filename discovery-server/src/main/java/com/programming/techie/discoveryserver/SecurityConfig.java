@@ -9,7 +9,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
-        httpSecurity.csrf().ignoringRequestMatchers("/eureka/**");
+        httpSecurity.csrf().ignoringRequestMatchers("/eureka/**","/actuator/**");
         return httpSecurity.build();
     }
 }

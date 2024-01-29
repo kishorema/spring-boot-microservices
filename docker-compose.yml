@@ -6,6 +6,7 @@ services:
     container_name: postgres-order
     image: postgres
     environment:
+      PGUSER: orderUser
       POSTGRES_DB: order_service
       POSTGRES_USER: orderUser
       POSTGRES_PASSWORD: password
@@ -18,6 +19,12 @@ services:
       - "5431:5431"
     command: -p 5431
     restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d postgres -U orderUser -p 5431" ]
+      interval: 10s
+      timeout: 60s
+      retries: 3
+      start_period: 30s
 
   postgres-inventory:
     container_name: postgres-inventory
@@ -32,6 +39,12 @@ services:
     ports:
       - "5432:5432"
     restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d postgres -U inventoryUser -p 5432" ]
+      interval: 10s
+      timeout: 60s
+      retries: 3
+      start_period: 30s
 
   ## Mongo Docker Compose Config
   mongodb:
@@ -43,19 +56,27 @@ services:
     expose:
       - "27017"
     volumes:
-      - ./mongo-data:/data/db
+      - mongo-data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
 
   ## Keycloak Config with Mysql database
-  keycloak-mysql:
+  keycloak-mysqldb:
     container_name: keycloak-mysqldb
     image: mysql:5.7
     volumes:
       - ./mysql_keycloak_data:/var/lib/mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: keycloak
-      MYSQL_USER: keycloak
-      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: "password"
+      MYSQL_DATABASE: "keycloak"
+      MYSQL_USER: "keycloak"
+      MYSQL_PASSWORD: "password"
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u $$MYSQL_USER --password=$$MYSQL_PASSWORD
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+      interval: 10s
 
   keycloak:
     container_name: keycloak
@@ -75,41 +96,65 @@ services:
       - ./realms/:/opt/keycloak/data/import/
     depends_on:
       - keycloak-mysqldb
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8181 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.2
     container_name: zookeeper
+    hostname: zookeeper
     ports:
       - "2181:2181"
     environment:
+      ZOOKEEPER_SERVER_ID: 1
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-
+      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+    healthcheck:
+      test: nc -z localhost 2181 || exit -1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
   kafka:
     image: confluentinc/cp-kafka:7.3.2
     container_name: kafka
+    hostname: kafka
     ports:
       - "9092:9092"
-    depends_on:
-      - zookeeper
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_JMX_PORT: 9999
       KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
-
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+  
   ## Zipkin
   zipkin:
     image: openzipkin/zipkin
     container_name: zipkin
     ports:
       - "9411:9411"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:9411 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   ## Eureka Server
   discovery-server:
@@ -117,11 +162,16 @@ services:
     container_name: discovery-server
     ports:
       - "8761:8761"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8761 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
-      - zipkin
-      - elasticsearch-kibana
+      zipkin:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
 
   api-gateway:
     build: api-gateway
@@ -131,32 +181,36 @@ services:
     expose:
       - "8282"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
     depends_on:
       - zipkin
       - discovery-server
       - keycloak
-      - elasticsearch-kibana
+      - kibana
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8282/actuator/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  ## Product-Service Docker Compose Config
   product-service:
     container_name: product-service
     build: product-service
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
     depends_on:
       - mongodb
       - discovery-server
       - api-gateway
-      - elasticsearch-kibana
+      - kibana
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://product-service/actuator/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  ## Order-Service Docker Compose Config
   order-service:
     container_name: order-service
     build: order-service
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-order:5431/order-service
     depends_on:
       - postgres-order
@@ -164,35 +218,53 @@ services:
       - zipkin
       - discovery-server
       - api-gateway
-      - elasticsearch-kibana
+      - kibana
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://order-service/actuator/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  ## Inventory-Service Docker Compose Config
   inventory-service:
     container_name: inventory-service
     build: inventory-service
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-inventory:5432/inventory-service
     depends_on:
-      - postgres-inventory
-      - discovery-server
-      - api-gateway
-      - elasticsearch-kibana
+      postgres-inventory:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://inventory-service/actuator/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  ## Notification-Service Docker Compose Config
   notification-service:
     container_name: notification-service
     build: notification-service
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
     depends_on:
-      - zipkin
-      - kafka
-      - discovery-server
-      - api-gateway
-      - elasticsearch-kibana
+      zipkin:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://notification-service/actuator/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  ## Prometheus
   prometheus:
     image: prom/prometheus:v2.37.1
     container_name: prometheus
@@ -206,6 +278,12 @@ services:
       - inventory-service
       - order-service
       - notification-service
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:9090 || exit 1
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
 
   grafana:
     image: grafana/grafana-oss:8.5.2
@@ -220,7 +298,82 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
-  elasticsearch-kibana:
-    extends:
-      service: elasticsearch-logstash-kibana
-      file: elasticsearch-kibana/docker-compose.yml
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  elasticsearch:
+    image: elasticsearch:7.6.1
+    volumes:
+      - elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ELASTIC_USER: "elastic"
+      ELASTIC_PASSWORD: "changeme"
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    healthcheck:
+      test: "wget -q -O - http://$ELASTIC_USER:$ELASTIC_PASSWORD@localhost:9200/_cat/health"
+      interval: 10s
+      timeout: 30s
+      retries: 10
+    restart: unless-stopped
+
+  logstash:
+    image: logstash:7.6.1
+    ports:
+      - "5000:5000"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ELASTIC_USER: "elastic"
+      ELASTIC_PASSWORD: "changeme"
+      XPACK_MONITORING_ELASTICSEARCH_USERNAME: $ELASTIC_USER
+      XPACK_MONITORING_ELASTICSEARCH_PASSWORD: $ELASTIC_PASSWORD
+      XPACK_MONITORING_ELASTICSEARCH_HOSTS: "elasticsearch:9200"
+      XPACK_MONITORING_ENABLED: "true"
+    volumes:
+      - ./elasticsearch-kibana/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5000 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kibana:
+    image: kibana:7.6.1
+    environment:
+      ELASTIC_USER: "elastic"
+      ELASTIC_PASSWORD: "changeme"
+      ELASTICSEARCH_USERNAME: "elastic"
+      ELASTICSEARCH_PASSWORD: "changeme"
+      # Because Elasticsearch is running in a containerized environment
+      # (setting this to false will result in CPU stats not being correct in the Monitoring UI):
+      XPACK_MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED: "true"
+    ports:
+      - "5601:5601"
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      logstash:
+        condition: service_healthy
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5601 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  elasticsearch:
+  mongo-data:

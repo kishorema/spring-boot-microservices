@@ -156,7 +156,7 @@ services:
     ports:
       - "9411:9411"
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:9411 || exit 1
+      test: wget --no-verbose --tries=1 --spider http://localhost:9411/health || exit 1
       interval: 60s
       timeout: 5s
       retries: 3
@@ -287,7 +287,7 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
+      logstash.port: "5000"
     ports:
       - "8761:8761"
     healthcheck:
@@ -313,7 +313,7 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
+      logstash.port: "5000"
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: TRACE
     depends_on:
       zipkin:
@@ -337,7 +337,7 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
+      logstash.port: "5000"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -350,7 +350,7 @@ services:
       zipkin:
         condition: service_healthy
     healthcheck:
-      test: curl http://product-service/actuator/health
+      test: curl http://product-service:8991/actuator/health
       interval: 60s
       timeout: 5s
       retries: 3
@@ -362,12 +362,10 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-order:5431/order-service
+      logstash.port: "5000"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-order:5431/order_service
     depends_on:
       postgres-order:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
@@ -378,7 +376,7 @@ services:
       zipkin:
         condition: service_healthy
     healthcheck:
-      test: curl http://order-service/actuator/health
+      test: curl http://order-service:8992/actuator/health
       interval: 60s
       timeout: 5s
       retries: 3
@@ -390,8 +388,8 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-inventory:5432/inventory-service
+      logstash.port: "5000"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-inventory:5432/inventory_service
     depends_on:
       postgres-inventory:
         condition: service_healthy
@@ -404,7 +402,7 @@ services:
       zipkin:
         condition: service_healthy
     healthcheck:
-      test: curl http://inventory-service/actuator/health
+      test: curl http://inventory-service:8994/actuator/health
       interval: 60s
       timeout: 5s
       retries: 3
@@ -416,7 +414,7 @@ services:
     environment:
       #logstash
       logstash.host: "logstash"
-      logstash.port: 9600
+      logstash.port: "5000"
     depends_on:
       zipkin:
         condition: service_healthy
@@ -426,10 +424,8 @@ services:
         condition: service_healthy
       kibana:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
     healthcheck:
-      test: curl http://notification-service/actuator/health
+      test: curl http://notification-service:8993/actuator/health
       interval: 60s
       timeout: 5s
       retries: 3

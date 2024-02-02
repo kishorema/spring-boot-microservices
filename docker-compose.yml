@@ -359,6 +359,8 @@ services:
   order-service:
     container_name: order-service
     build: order-service
+    ports:
+      - "5005:5005"
     environment:
       #logstash
       logstash.host: "logstash"

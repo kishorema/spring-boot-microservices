@@ -35,3 +35,10 @@ body:
     }
     ]
 }
+
+https://www.youtube.com/watch?v=5_EXMJbhLY4&t=2519s
+https://jwt.io/
+
+edit hosts file: C:\Windows\System32\drivers\etc\hosts
+add: 127.0.0.1 keycloak
+//if not postman keep calling localhost not keycloak server since keycloak running as docker container with name keycloak

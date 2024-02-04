@@ -107,16 +107,10 @@ services:
   #      retries: 3
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.2
     container_name: zookeeper
-    hostname: zookeeper
+    image: wurstmeister/zookeeper
     ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_SERVER_ID: 1
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+      - 2181:2181
     healthcheck:
       test: nc -z localhost 2181 || exit -1
       interval: 30s
@@ -125,30 +119,30 @@ services:
       start_period: 30s
 
   kafka:
-    image: confluentinc/cp-kafka:7.3.2
     container_name: kafka
-    hostname: kafka
+    image: wurstmeister/kafka
     ports:
-      - "9092:9092"
-      - "29092:29092"
+      - 9092:9092
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
-      KAFKA_JMX_PORT: 9999
-      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
-      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
-      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
     depends_on:
       zookeeper:
         condition: service_healthy
-  
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    depends_on:
+      - zookeeper
+
   ## Zipkin
   zipkin:
     image: openzipkin/zipkin
@@ -162,25 +156,52 @@ services:
       retries: 3
       start_period: 30s
 
+  cadvisor:
+    image: 'google/cadvisor:latest'
+    container_name: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk:/dev/disk/:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /var/lib/dbus/machine-id:/var/lib/dbus/machine-id:ro
+    ports:
+      - '8082:8080'
+
   prometheus:
-    image: prom/prometheus:v2.37.1
+    image: prom/prometheus:v2.43.1
     container_name: prometheus
-    restart: always
+    restart: unless-stopped
+    expose:
+      - 9090
     ports:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    depends_on:
-      - product-service
-      - inventory-service
-      - order-service
-      - notification-service
+      - ./prometheus/prometheus_data:/prometheus
+    #    depends_on:
+    #      - product-service
+    #      - inventory-service
+    #      - order-service
+    #      - notification-service
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:9090 || exit 1
       interval: 60s
       timeout: 15s
       retries: 3
       start_period: 30s
+    labels:
+      org.label-schema.group: "monitoring"
 
   grafana:
     image: grafana/grafana-oss:8.5.2
@@ -192,6 +213,7 @@ services:
       - prometheus:prometheus
     volumes:
       - ./Grafana_Dashboard.json:/var/lib/grafana/Grafana_Dashboard.json
+      - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
@@ -201,6 +223,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    labels:
+      org.label-schema.group: "monitoring"
 
   elasticsearch:
     hostname: elasticsearch
@@ -434,7 +458,9 @@ services:
       start_period: 60s
 
 volumes:
-  elasticsearch:
-  mongo-data:
+  elasticsearch: { }
+  mongo-data: { }
+  prometheus_data: { }
+  grafana_data: { }
 networks:
   internal:

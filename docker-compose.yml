@@ -156,8 +156,23 @@ services:
       retries: 3
       start_period: 30s
 
+  cadvisor:
+    image: 'google/cadvisor:latest'
+    container_name: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk:/dev/disk/:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /var/lib/dbus/machine-id:/var/lib/dbus/machine-id:ro
+    ports:
+      - '8082:8080'
+
   prometheus:
-    image: prom/prometheus:v2.37.1
+    image: prom/prometheus:v2.43.1
     container_name: prometheus
     restart: unless-stopped
     expose:

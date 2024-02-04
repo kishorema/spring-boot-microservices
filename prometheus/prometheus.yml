@@ -27,3 +27,9 @@ scrape_configs:
       - targets: [ 'notification-service:8993' ]
         labels:
           application: 'Notification Service Application'
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: [ 'prometheus:9090' ]
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: [ 'cadvisor:8080' ]
